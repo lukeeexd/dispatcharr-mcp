@@ -4,6 +4,44 @@ All notable changes to dispatcharr-mcp are documented here.
 
 ---
 
+## [2.7.0] - 2026-09-25
+
+Tracks Dispatcharr 0.31.0. First release from the [lukeeexd/dispatcharr-mcp](https://github.com/lukeeexd/dispatcharr-mcp) fork; the Docker image is now `ghcr.io/lukeeexd/dispatcharr-mcp`.
+
+### Fixed
+
+- **`bulk_delete_channel_logos` and `bulk_delete_vod_logos` never worked.** Both passed a body to `DispatcharrClient.delete()`, which takes no body, so every call raised `TypeError` before reaching the server. They also sent `ids` where both endpoints read `logo_ids`. Now sent via `delete_with_body` with `logo_ids`. The channel variant gains `delete_files`, which the endpoint has always accepted, to remove local `/data/logos` files as well.
+- **`create_subscription` never worked.** It posted `event_type`, but the serializer's fields are `event` and a required `integration`. The signature is now `(event, integration_id, enabled=True, payload_template=None)` and the docstring lists every valid event name. The old signature could not create a subscription, so nothing that worked is broken by the change.
+- **JWT mode logged in on every tool call.** `_client()` built a fresh client per call, so the cached token was thrown away each time and the password posted again, despite the comment saying the token was reused. The client is now one instance per process: it logs in once and refreshes on 401.
+
+### Added
+
+- `get_epg_grid` gains the 0.31 window parameters: `days` / `prev_days` (relative to now) or `start` / `end` (ISO 8601, take precedence), plus `channel_profile_id` to scope the grid to one profile. No arguments keeps the previous past-hour-to-next-24h window.
+- `list_log_files` and `get_log_file` for the log collector added in 0.31 (admin only). `get_log_file` takes the server's `cursor` to fetch only lines written since the last call, and trims `content` to `max_chars` (default 20 000) on line boundaries — a cursor-less tail can otherwise be up to 24 MB, far past what is useful in a tool result.
+
+### Changed
+
+- **`get_epg_grid` output is filtered and capped.** The raw grid returned every programme on every channel. On a 151-channel install the default 24-hour window was about 1.1 MB, far more than a model can use in one tool result. The tool now:
+  - filters by `tvg_ids` and by `search` (title or sub-title)
+  - leaves out `description` unless `include_description` is set
+  - drops null, false and empty keys from each programme
+  - sorts by `start_time` and caps the result at `limit` (default 150)
+
+  The same default call is now about 36 KB. The response is now `{"data": [...], "total", "truncated"}` instead of the raw `{"data": [...]}`, so callers can tell when to narrow the query.
+- **Errors now carry Dispatcharr's explanation.** Failed requests still raise `httpx.HTTPStatusError`, but the message now includes method, path and the response body (capped at 500 characters) — e.g. `401 Unauthorized for GET /api/…: {"detail":"Invalid API key"}` instead of a bare status line. Login failures in JWT mode report the same way.
+- Docstrings updated for 0.31 behaviour:
+  - `rehash_streams` is admin only (403 otherwise).
+  - `update_recording` — path fields in `custom_properties` are ignored; recordings stay under `/data/recordings`.
+  - `delete_output_profile` — locked profiles are refused; deleting clears user, HDHR and DVR references.
+  - `update_setting` — new keys `dvr_settings.output_profile_id`, `proxy_settings.validate_redirect_urls`, and `system_settings.log_persist` / `log_max_mb` / `log_keep`.
+  - `update_user` — `custom_properties` merge semantics and the new admin-only `allowed_m3u_profile_ids` (absent = all, `[]` = none, list = only those).
+  - `get_system_events` — new `m3u_error` / `epg_error` events.
+  - `get_env_settings` — `log_collector_running`.
+- README points at the fork, lists the Logs tools, and documents that a set API key never falls back to username/password.
+- `dispatcharr_mcp.__version__` was left at 2.5.1 by the last two releases; now matches the package version.
+
+---
+
 ## [2.6.0] - 2026-08-29
 
 Tracks Dispatcharr 0.30.0.

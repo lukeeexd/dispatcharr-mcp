@@ -12,6 +12,14 @@ Authentication — two modes, checked in order:
        Tokens are fetched lazily on the first request. A 401 response tries the
        refresh token before falling back to a full password login.
 
+  If DISPATCHARR_API_KEY is set, the username/password are never used — a
+  rejected key surfaces as an error rather than silently falling back.
+
+Errors:
+  Non-2xx responses raise httpx.HTTPStatusError whose message carries the
+  method, path, and Dispatcharr's response body (e.g. "Invalid API key" or a
+  field-level validation error), so callers can see *why* a request failed.
+
 Environment variables:
   DISPATCHARR_URL       - base URL, e.g. http://dispatcharr.example.com
   DISPATCHARR_API_KEY   - static API key (generate in Dispatcharr UI → Users)
@@ -25,6 +33,26 @@ from typing import Any
 import httpx
 
 _TIMEOUT = 30.0
+# Enough for DRF validation errors; stops an HTML error page flooding the output.
+_MAX_ERROR_BODY = 500
+
+
+def _raise_for_status(r: httpx.Response) -> None:
+    """Like ``r.raise_for_status()``, but include the response body.
+
+    httpx's own message is only the status line, which hides Dispatcharr's
+    explanation — a bad API key and a missing permission both read as a bare
+    401/403 without it.
+    """
+    if r.is_success:
+        return
+    body = r.text.strip()
+    if len(body) > _MAX_ERROR_BODY:
+        body = body[:_MAX_ERROR_BODY] + "…"
+    message = f"{r.status_code} {r.reason_phrase} for {r.request.method} {r.request.url.path}"
+    if body:
+        message += f": {body}"
+    raise httpx.HTTPStatusError(message, request=r.request, response=r)
 
 
 class DispatcharrClient:
@@ -73,7 +101,7 @@ class DispatcharrClient:
                 self._url("/api/accounts/token/"),
                 json={"username": self._username, "password": self._password},
             )
-            r.raise_for_status()
+            _raise_for_status(r)
             data = r.json()
             self._access_token = data["access"]
             self._refresh_token = data.get("refresh")
@@ -105,7 +133,7 @@ class DispatcharrClient:
                 if not await self._refresh():
                     await self._login()
                 r = await c.request(method, self._url(path), headers=self._auth_headers(), **kwargs)
-            r.raise_for_status()
+            _raise_for_status(r)
             return r.json() if r.content else {}
 
     async def get(self, path: str, params: dict | None = None) -> Any:

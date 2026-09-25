@@ -2,6 +2,8 @@
 
 An [MCP](https://modelcontextprotocol.io) server for [Dispatcharr](https://github.com/Dispatcharr/Dispatcharr) — giving AI agents full control over your IPTV streams, channels, EPG, and VOD library.
 
+Tracks Dispatcharr 0.31. Maintained fork of [crunchingcode/dispatcharr-mcp](https://github.com/crunchingcode/dispatcharr-mcp), which is no longer updated.
+
 ## Authentication
 
 Two modes are supported — `DISPATCHARR_API_KEY` takes priority if set:
@@ -10,6 +12,8 @@ Two modes are supported — `DISPATCHARR_API_KEY` takes priority if set:
 |------|------------------|
 | API Key (stateless, no token expiry) | `DISPATCHARR_URL` + `DISPATCHARR_API_KEY` |
 | JWT (username/password) | `DISPATCHARR_URL` + `DISPATCHARR_USERNAME` + `DISPATCHARR_PASSWORD` |
+
+If `DISPATCHARR_API_KEY` is set, the username/password are ignored — a rejected key is reported as an error (with Dispatcharr's reason, e.g. `Invalid API key`) rather than falling back to a login. An empty `DISPATCHARR_API_KEY` counts as unset.
 
 To generate an API key: Dispatcharr UI → **System → Users** → edit your user → copy the API Key field.
 
@@ -29,6 +33,7 @@ To generate an API key: Dispatcharr UI → **System → Users** → edit your us
 | **Channel Profiles** | `list_channel_profiles`, `create_channel_profile`, `delete_channel_profile`, `get_channel_profile`, `update_channel_profile`, `duplicate_channel_profile`, `bulk_update_profile_channels`, `update_profile_channel` |
 | **VOD** | `list_movies`, `get_movie`, `list_series`, `get_series`, `list_episodes`, `list_vod_categories` |
 | **System** | `get_core_settings`, `get_version`, `list_stream_profiles`, `get_stream_profile`, `create_stream_profile`, `update_stream_profile`, `delete_stream_profile`, `get_system_events`, `list_timezones`, `list_useragents`, `get_useragent`, `create_useragent`, `update_useragent`, `delete_useragent`, `get_setting`, `update_setting`, `delete_setting`, `check_settings`, `get_env_settings`, `rehash_streams` |
+| **Logs** (admin) | `list_log_files`, `get_log_file` |
 | **Output Profiles** | `list_output_profiles`, `get_output_profile`, `create_output_profile`, `update_output_profile`, `delete_output_profile` |
 | **Notifications** | `list_notifications`, `get_notification`, `get_notification_count`, `dismiss_notification`, `dismiss_all_notifications`, `delete_notification` |
 | **Connect** | `list_integrations`, `get_integration`, `create_integration`, `update_integration`, `delete_integration`, `test_integration`, `get_integration_subscriptions`, `set_integration_subscriptions`, `list_subscriptions`, `get_subscription`, `create_subscription`, `update_subscription`, `delete_subscription`, `list_stream_delivery_logs`, `get_delivery_log` |
@@ -95,7 +100,7 @@ docker run -d -p 8000:8000 \
   -e DISPATCHARR_URL=http://your-dispatcharr-host:9191 \
   -e DISPATCHARR_API_KEY=your-api-key \
   -e FASTMCP_HOST=0.0.0.0 \
-  ghcr.io/crunchingcode/dispatcharr-mcp:latest
+  ghcr.io/lukeeexd/dispatcharr-mcp:latest
 ```
 
 ### Connect your AI client (HTTP)
@@ -141,7 +146,7 @@ Use this approach when you want the MCP server to run as a subprocess on the sam
 ### Install
 
 ```bash
-git clone https://github.com/crunchingcode/dispatcharr-mcp
+git clone https://github.com/lukeeexd/dispatcharr-mcp
 cd dispatcharr-mcp
 python3 -m venv .venv
 .venv/bin/pip install -e .
