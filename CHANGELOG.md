@@ -4,6 +4,19 @@ All notable changes to dispatcharr-mcp are documented here.
 
 ---
 
+## [2.8.0] - 2026-09-27
+
+Ports the server to the `mcp` 2.x SDK. No tool changes: all 247 tools keep identical names, descriptions and input schemas.
+
+### Changed
+
+- **Requires `mcp>=2.2,<3`** (was `<2`). 2.0 removed `mcp.server.fastmcp`; the server now uses its successor, `MCPServer`.
+- **Error text still reaches the model.** 2.x replaces any exception other than `ToolError` with a bare `Error executing tool <name>`, which would have hidden the Dispatcharr response bodies added in 2.7.0. HTTP errors (4xx/5xx bodies and connection failures) and configuration errors such as a missing `DISPATCHARR_URL` are now re-raised as `ToolError`, so their text is kept. Any other exception is a bug: the client gets the generic message and the server logs the traceback.
+
+`MCP_TRANSPORT`, `FASTMCP_HOST`, `FASTMCP_PORT` and `PORT` work as before, so existing Docker and compose setups need no changes.
+
+---
+
 ## [2.7.0] - 2026-09-25
 
 Tracks Dispatcharr 0.31.0. First release from the [lukeeexd/dispatcharr-mcp](https://github.com/lukeeexd/dispatcharr-mcp) fork; the Docker image is now `ghcr.io/lukeeexd/dispatcharr-mcp`.
