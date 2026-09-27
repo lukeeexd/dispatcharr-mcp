@@ -4,6 +4,20 @@ All notable changes to dispatcharr-mcp are documented here.
 
 ---
 
+## [2.9.0] - 2026-09-27
+
+### Changed
+
+- **List results arrive as one block.** The SDK sent a returned list as one content block per item, so `list_channel_groups` on a 1,506-group install came back as 1,506 blocks. Every tool whose endpoint returns an array now sends a single compact JSON block. The data is the same; only the wrapping and whitespace change.
+- **`list_channel_groups` is filtered and trimmed.** The endpoint has no server-side filtering and returned about 480 KB on that install. The tool now:
+  - filters by `search` (name), `has_channels` and `m3u_account_id`
+  - leaves out each group's nested `m3u_accounts` details unless `include_m3u_accounts` is set (`m3u_account_count` and `channel_count` are kept)
+  - sorts by name and caps the result at `limit` (default 200)
+
+  The response is now `{"data": [...], "total", "truncated"}` instead of a bare array. The same default call is about 25 KB.
+
+---
+
 ## [2.8.0] - 2026-09-27
 
 Ports the server to the `mcp` 2.x SDK. No tool changes: all 247 tools keep identical names, descriptions and input schemas.
