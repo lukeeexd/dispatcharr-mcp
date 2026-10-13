@@ -127,13 +127,21 @@ def _clean(params: dict) -> dict:
 async def list_channels(
     search: str | None = None,
     channel_group: str | None = None,
+    only_radio: bool = False,
     page: int | None = None,
     page_size: int | None = None,
 ) -> dict:
     """List channels with optional filtering.
 
-    Returns a paginated list of channels. Use `search` to filter by name,
-    `channel_group` to filter by group name, and `page`/`page_size` for pagination.
+    Returns a paginated list of channels. Filters match what the channel shows,
+    so an override's name, group or number wins over the provider's value:
+
+    - `search` matches the channel name or group name (substring).
+    - `channel_group` is an exact group name; comma-separate several to match
+      any of them.
+    - `only_radio` keeps radio channels only (the override's radio flag wins
+      when set).
+    - `page` / `page_size` paginate.
     """
     return await _client().get(
         "/api/channels/channels/",
@@ -141,6 +149,8 @@ async def list_channels(
             {
                 "search": search,
                 "channel_group": channel_group,
+                # The API treats any non-empty value as true, so never send false.
+                "only_radio": True if only_radio else None,
                 "page": page,
                 "page_size": page_size,
             }
@@ -178,6 +188,18 @@ async def update_channel(channel_id: int, fields: dict) -> dict:
 
     Pass any subset of channel fields as `fields` (e.g. {"name": "BBC One",
     "channel_number": 1.0}).  Only provided fields are changed.
+    ``is_radio`` marks a radio channel: M3U output tags it ``radio="true"``
+    and XC lists it as ``radio_streams``.
+
+    On an auto-created channel (``auto_created`` true) an account refresh
+    re-syncs name, number, group, logo, TVG-ID, EPG, stream profile and radio
+    flag from the provider. To keep your value, send it as an override:
+    ``{"override": {"is_radio": true}}`` sets it, ``{"override": {"is_radio":
+    null}}`` clears that one field, and ``{"override": null}`` removes every
+    override. Override keys: ``name``, ``channel_number``,
+    ``channel_group_id``, ``logo_id``, ``tvg_id``, ``tvc_guide_stationid``,
+    ``epg_data_id``, ``stream_profile_id``, ``is_radio``. Manual channels
+    refuse overrides; set the field directly.
     """
     return await _client().patch(f"/api/channels/channels/{channel_id}/", data=fields)
 
@@ -310,6 +332,7 @@ async def list_streams(
     search: str | None = None,
     m3u_account: int | None = None,
     channel_group_name: str | None = None,
+    is_radio: bool = False,
     page: int | None = None,
     page_size: int | None = None,
 ) -> dict:
@@ -317,7 +340,8 @@ async def list_streams(
 
     These are the source streams imported from M3U playlists, not the
     channel output. Filter by `m3u_account` (account ID), group name,
-    or free-text `search`.
+    or free-text `search`. `is_radio` keeps only streams the provider marks
+    as radio (M3U ``radio`` attribute or XC ``radio_streams``).
     """
     return await _client().get(
         "/api/channels/streams/",
@@ -326,6 +350,7 @@ async def list_streams(
                 "search": search,
                 "m3u_account": m3u_account,
                 "channel_group_name": channel_group_name,
+                "is_radio": True if is_radio else None,
                 "page": page,
                 "page_size": page_size,
             }
@@ -657,7 +682,7 @@ async def search_epg_programs(
     tvg_id: str | None = None,
     epg_source: int | None = None,
     group: str | None = None,
-    stream: int | None = None,
+    stream: str | None = None,
     airing_at: str | None = None,
     start_after: str | None = None,
     start_before: str | None = None,
@@ -674,10 +699,15 @@ async def search_epg_programs(
     - `description` / `description_regex` — match descriptions
     - `channel` — channel name substring; `channel_id` — integer channel ID
     - `tvg_id` — EPG TVG-ID; `epg_source` — EPG source ID
-    - `group` — channel group name; `stream` — stream ID
+    - `group` — channel or stream group name substring; `stream` — stream
+      name substring
     - `airing_at` — ISO-8601 datetime (programme must be airing at that instant)
     - `start_after` / `start_before` / `end_after` / `end_before` — time window filters
     - `fields` — comma-separated list of fields to include in the response
+
+    Channel filters and each result's ``channels`` use the channel as shown:
+    an override's name, number, group and EPG assignment win, so a channel
+    linked to the guide only through an override is found too.
     """
     return await _client().get(
         "/api/epg/programs/search/",
@@ -921,7 +951,11 @@ async def get_core_settings() -> list:
 
 @mcp.tool()
 async def list_stream_profiles() -> list:
-    """List stream profiles (FFmpeg/Streamlink/VLC output configurations)."""
+    """List stream profiles (FFmpeg/Streamlink/VLC output configurations).
+
+    ``locked`` marks the built-in profiles (Proxy, Redirect, FFmpeg,
+    Streamlink, …), which cannot be edited or deleted.
+    """
     return await _client().get("/api/core/streamprofiles/")
 
 
@@ -937,6 +971,13 @@ async def get_system_events(
     `event_type` to filter by a specific event kind. Failed M3U and EPG
     refreshes (download, parse, or Schedules Direct errors) are recorded as
     ``m3u_error`` / ``epg_error`` — filter on those to find broken sources.
+
+    ``channel_buffering``, ``channel_failover``, ``channel_reconnect``,
+    ``channel_error`` and ``stream_switch`` carry the ``stream_id`` involved,
+    so you can tell which provider stream is unstable. ``stream_switch``
+    also has ``previous_stream_id`` and the switch reason. ``recording_end``
+    fires after post-processing, with ``outcome`` (``success`` / ``failed`` /
+    ``cancelled``) and ``failure_reason``.
     """
     return await _client().get(
         "/api/core/system-events/",
@@ -2221,13 +2262,15 @@ async def update_stream_profile(profile_id: int, fields: dict) -> dict:
 
     Pass any subset of profile fields as `fields`
     (e.g. ``{"name": "HQ FFMPEG", "parameters": "-c:v copy"}``).
+    On a locked (built-in) profile only ``user_agent`` can change; anything
+    else returns 400.
     """
     return await _client().patch(f"/api/core/streamprofiles/{profile_id}/", data=fields)
 
 
 @mcp.tool()
 async def delete_stream_profile(profile_id: int) -> dict:
-    """Delete a stream profile by ID."""
+    """Delete a stream profile by ID. Locked (built-in) profiles return 400."""
     return await _client().delete(f"/api/core/streamprofiles/{profile_id}/")
 
 
@@ -2378,11 +2421,17 @@ async def create_subscription(
     """Subscribe a Connect integration to one event.
 
     `event` is one of: ``channel_start``, ``channel_stop``,
-    ``channel_reconnect``, ``channel_error``, ``channel_failover``,
-    ``stream_switch``, ``recording_start``, ``recording_end``,
-    ``epg_refresh``, ``epg_error``, ``m3u_refresh``, ``m3u_error``,
-    ``client_connect``, ``client_disconnect``, ``login_failed``,
-    ``epg_blocked``, ``m3u_blocked``, ``vod_start``, ``vod_stop``.
+    ``channel_reconnect``, ``channel_error``, ``channel_buffering``,
+    ``channel_failover``, ``stream_switch``, ``recording_start``,
+    ``recording_end``, ``epg_refresh``, ``epg_error``, ``m3u_refresh``,
+    ``m3u_error``, ``client_connect``, ``client_disconnect``,
+    ``login_failed``, ``epg_blocked``, ``m3u_blocked``, ``vod_start``,
+    ``vod_stop``.
+
+    Live stream events carry ``stream_id``; ``stream_switch`` adds
+    ``previous_stream_id`` and a reason. ``recording_end`` fires after
+    post-processing — branch on ``outcome`` (``success`` / ``failed`` /
+    ``cancelled``) and ``failure_reason``; the old ``interrupted`` flag is gone.
 
     `integration_id` is the integration that receives the event (see
     `list_integrations`). `payload_template` optionally customises the
@@ -2647,14 +2696,17 @@ async def create_stream(
     tvg_id: str | None = None,
     logo_url: str | None = None,
     is_adult: bool = False,
+    is_radio: bool = False,
     stream_profile_id: int | None = None,
 ) -> dict:
     """Create a custom stream entry.
 
     Useful for adding streams that are not imported from an M3U account.
     Supply at minimum a `name`; `url` is required for the stream to be playable.
+    `is_radio` marks an audio-only stream; channels created from it inherit
+    the flag.
     """
-    data: dict = {"name": name, "is_adult": is_adult}
+    data: dict = {"name": name, "is_adult": is_adult, "is_radio": is_radio}
     if url is not None:
         data["url"] = url
     if m3u_account is not None:
@@ -2726,11 +2778,13 @@ async def list_stream_ids(
     search: str | None = None,
     m3u_account: int | None = None,
     channel_group_name: str | None = None,
+    is_radio: bool = False,
 ) -> list:
     """Get just the IDs of streams matching optional filters.
 
     Lightweight alternative to `list_streams` when you only need IDs,
     e.g. to pass to `bulk_delete_streams` or `get_streams_by_ids`.
+    `is_radio` keeps only radio streams.
     """
     return await _client().get(
         "/api/channels/streams/ids/",
@@ -2739,6 +2793,7 @@ async def list_stream_ids(
                 "search": search,
                 "m3u_account": m3u_account,
                 "channel_group_name": channel_group_name,
+                "is_radio": True if is_radio else None,
             }
         ),
     )
@@ -2779,6 +2834,9 @@ async def bulk_update_channels(updates: list[dict]) -> dict:
     `updates` is a list of partial channel objects — each must include an
     ``id`` field plus the fields to change
     (e.g. ``[{"id": 1, "name": "BBC One"}, {"id": 2, "channel_number": 2}]``).
+    Accepts the same fields as `update_channel`, including ``is_radio`` and,
+    for auto-created channels, ``override`` (e.g. ``{"id": 3, "override":
+    {"is_radio": true}}``).
     """
     return await _client().patch(
         "/api/channels/channels/edit/bulk/", data=updates
@@ -2818,9 +2876,10 @@ async def assign_channels(
 ) -> dict:
     """Assign sequential channel numbers to a list of channels.
 
-    Channels in `channel_ids` will be numbered consecutively starting from
-    `starting_number` (e.g. 100.0). If `starting_number` is omitted the API
-    picks the next available number.
+    Channels are numbered consecutively in the order given in `channel_ids`,
+    starting from `starting_number` (default 1). IDs that don't exist are
+    skipped. Auto-created channels get the number as an override, so it
+    survives the next account refresh.
     """
     return await _client().post(
         "/api/channels/channels/assign/",
@@ -2919,7 +2978,9 @@ async def reorder_channel(channel_id: int, insert_after_id: int | None = None) -
 
     `insert_after_id` is the ID of the channel that this channel should
     appear after. Omit (or pass null) to move the channel to the top of
-    the list.
+    the list. Positions follow the numbers channels display (overrides
+    included); channels in between shift by one, and auto-created channels
+    get their new number as an override.
     """
     return await _client().post(
         f"/api/channels/channels/{channel_id}/reorder/",
@@ -3038,6 +3099,17 @@ async def update_setting(setting_id: int, fields: dict) -> dict:
     - ``system_settings.log_persist`` (bool), ``log_max_mb`` (1–20, default 5),
       ``log_keep`` (files kept incl. the live one, min 2) — log file
       collection, applied without a restart.
+
+    Added in 0.32:
+
+    - ``reverse_proxy_auth`` — ``{"enabled": bool, "header": str}``. Signs
+      users in from an identity header set by a reverse proxy (e.g.
+      ``X-Forwarded-User``), matched to a username or unique email.
+      ``header`` must be letters, digits and dashes, and is required to
+      enable. It does nothing until the server's
+      ``DISPATCHARR_TRUSTED_PROXIES`` env var names that proxy, and the proxy
+      must strip the header from client requests — otherwise anyone can sign
+      in as any user. Only change it when the user asks to.
     """
     return await _client().patch(f"/api/core/settings/{setting_id}/", data=fields)
 
@@ -3062,8 +3134,8 @@ async def check_settings(fields: dict | None = None) -> dict:
 async def get_env_settings() -> dict:
     """Get environment-level settings (read-only, sourced from env vars / config files).
 
-    Includes ``log_collector_running`` — when false, no log files are
-    collected and `list_log_files` will come back empty.
+    Includes ``redis_tls`` and ``postgres_tls`` connection status. Whether
+    the log collector is running is reported by `list_log_files`.
     """
     return await _client().get("/api/core/settings/env/")
 
@@ -3260,7 +3332,8 @@ async def update_output_profile(profile_id: int, fields: dict) -> dict:
     """Partially update an output profile by ID.
 
     `fields` may contain any of: ``name``, ``command``, ``parameters``,
-    ``is_active``. Locked (built-in) profiles cannot be modified.
+    ``is_active``. Locked (built-in) profiles cannot be modified; the API
+    returns 400.
     """
     return await _client().patch(
         f"/api/core/outputprofiles/{profile_id}/", data=fields
@@ -3271,9 +3344,8 @@ async def update_output_profile(profile_id: int, fields: dict) -> dict:
 async def delete_output_profile(profile_id: int) -> dict:
     """Delete an output profile by ID.
 
-    Built-in locked profiles cannot be deleted — the API refuses, possibly
-    as a 500 rather than a 4xx, so check ``locked`` with `get_output_profile`
-    first. Deleting a profile also clears any user, HDHR, or DVR default that
+    Locked (built-in) profiles cannot be deleted; the API returns 400.
+    Deleting a profile also clears any user, HDHR, or DVR default that
     pointed at it (they fall back to no output profile).
     """
     return await _client().delete(f"/api/core/outputprofiles/{profile_id}/")

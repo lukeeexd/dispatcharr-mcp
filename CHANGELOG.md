@@ -4,6 +4,41 @@ All notable changes to dispatcharr-mcp are documented here.
 
 ---
 
+## [2.11.0] - 2026-10-13
+
+Tracks Dispatcharr 0.32.0. No tools added or removed; every existing call keeps working.
+
+### Added
+
+- Radio filters and flag:
+  - `list_channels` gains `only_radio`. It matches the effective flag, so an override wins.
+  - `list_streams` and `list_stream_ids` gain `is_radio`.
+  - `create_stream` gains `is_radio`.
+
+  The API reads any non-empty value as true, so these are sent only when set.
+- `update_channel` and `bulk_update_channels` document `is_radio` and the `override` object. An account refresh re-syncs auto-created channels from the provider, so a radio flag (or name, number, group…) set directly on one is lost. Sending it as `{"override": {...}}` keeps it.
+- `create_subscription` lists the new `channel_buffering` event.
+- `update_setting` documents the `reverse_proxy_auth` setting (`enabled`, `header`), including that it does nothing until `DISPATCHARR_TRUSTED_PROXIES` is set, and that the proxy must strip the header from client requests.
+
+### Fixed
+
+- **`search_epg_programs`' `stream` filter took an integer.** The endpoint matches a substring of the stream *name*, so an ID could never match. It is now a string.
+- **`assign_channels` documented the wrong default.** With no `starting_number`, the API starts at 1, not at the next free number.
+
+### Changed
+
+- Docstrings updated for 0.32 behaviour:
+  - `list_channels`: `search`, `channel_group` and ordering use override values. `channel_group` is an exact name (comma-separate several).
+  - `assign_channels` and `reorder_channel`: they follow the displayed (override-aware) numbers and write auto-created channels' numbers as overrides.
+  - `search_epg_programs`: channels linked to the guide only through an override now match, and results show override names and numbers.
+  - `get_system_events` and `create_subscription`: live stream events carry `stream_id`, and `stream_switch` adds `previous_stream_id`. `recording_end` now fires after post-processing, with `outcome` and `failure_reason`; the `interrupted` flag was removed.
+  - Stream and output profiles: locked profiles can't be edited or deleted, and attempts return 400 (deletes used to raise a 500). A locked stream profile's `user_agent` can still be changed. The built-in stream profiles are now named `FFmpeg` and `Streamlink`.
+  - `get_env_settings`: 0.32 dropped `log_collector_running` from this endpoint. `list_log_files` still reports `collector_running`.
+
+Not exposed: the new `POST /api/accounts/auth/proxy-login/` endpoint. It only works for requests that arrive through a trusted reverse proxy, and this server authenticates with an API key or password.
+
+---
+
 ## [2.10.0] - 2026-09-27
 
 ### Security

@@ -2,7 +2,7 @@
 
 An [MCP](https://modelcontextprotocol.io) server for [Dispatcharr](https://github.com/Dispatcharr/Dispatcharr) — giving AI agents full control over your IPTV streams, channels, EPG, and VOD library.
 
-Tracks Dispatcharr 0.31. Maintained fork of [crunchingcode/dispatcharr-mcp](https://github.com/crunchingcode/dispatcharr-mcp), which is no longer updated.
+Tracks Dispatcharr 0.32. Maintained fork of [crunchingcode/dispatcharr-mcp](https://github.com/crunchingcode/dispatcharr-mcp), which is no longer updated.
 
 ## Authentication
 
